@@ -7,10 +7,7 @@ import numpy as np
 lk_params = dict( winSize  = (15,15),
                   maxLevel = 2,
                   criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
-feature_params = dict( maxCorners = 100,
-                       qualityLevel = 0.3,
-                       minDistance = 7,
-                       blockSize = 7 )
+
 path = "images"
 def load_images(dir = ""):
     files = os.listdir(dir)
@@ -92,6 +89,10 @@ def estimate_warp(edges,image0,image1):
     return warp_back,warp_occ, h_back, h_occ
 
 
+def background_estimate(image, h):
+    return cv2.warpPerspective(image,np.linalg.inv(h),(image.shape[1],image.shape[0]))
+    
+
 
 
 
@@ -103,16 +104,42 @@ if __name__ == '__main__':
     edges = get_edges(images)
     warp_backs = []
     warp_occs = []
-    h_backs = []
-    h_occs = []
+    background= []
+    target = []
+    A = []
     for i in range(1,len(images)):
         print(i)
         warp_back,warp_occ, h_back,h_occ = estimate_warp(edges[0],images[0],images[i])
         warp_backs.append(warp_back)
         warp_occs.append(warp_occ)
-        h_backs.append(h_back)
-        h_occs.append(h_occ)
+        background.append(background_estimate(images[-1], h_back))
+        target.append(background_estimate(images[-1], h_occ))
 
+
+    background_t = np.array(background).mean(axis = 0)
+    for i in range(len(images)-1):
+        A.append(np.abs(background[i]-background_t))
+    background = background_t
+    del background_t
+    A = np.array(A).mean(axis = 0)
+    A = 1-(A>=.1)
+    background = background.reshape(-1,3)
+    A = A.reshape(-1,3)
+    occlusion = []
+    for i in range(len(images)-1):
+        occlusion.append(target[i].reshape(-1,3)-A*np.dot(warp_backs[i],background))
+    occlusion = np.array(occlusion).mean(axis = 0)
+
+    print(occlusion.shape)
+    print(background.shape)
+    for i in range(len(warp_backs)):
+        print(warp_backs[i].shape)
+        print(warp_occs[i].shape)
+    print(A.shape)
+
+
+
+    
     
 
 
@@ -122,12 +149,12 @@ if __name__ == '__main__':
     pts = pts.reshape(-1,1,2).astype(np.float32)
     gray0 = cv2.cvtColor(images[0], cv2.COLOR_BGR2GRAY)
     gray1 = cv2.cvtColor(images[1], cv2.COLOR_BGR2GRAY)
-    #pts = cv2.goodFeaturesToTrack(edges[0], mask = None, **feature_params)
+
     
     p1, st, err = cv2.calcOpticalFlowPyrLK(gray0, gray1, pts, None, **lk_params)
 
 
-    #p0 = cv2.goodFeaturesToTrack(gray0, mask = None, **feature_params)
+
     p0 = pts
     color = np.random.randint(0,255,(len(p1),3)) 
     #good_new = p1[st==1]
