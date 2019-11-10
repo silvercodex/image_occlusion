@@ -25,7 +25,7 @@ def get_edges(images):
     return [cv2.Canny(image,100,200) for image in images]
 
 def to_warp(w):
-    w_ = np.zeros(shape[0]*shape[1])
+    w_ = np.zeros(shape[0]*shape[1]).astype(np.float16)
     x = int(w[0])
     y = int(w[1])
     if x >=0 and y >=0 and x <=shape[1]-1 and y <=shape[0]-1:
@@ -78,7 +78,7 @@ def estimate_warp(edges,image0,image1):
     coor_trans = np.dot(np.linalg.inv(h_back),coor)
     coor_trans/=coor_trans[2,:]
     coor_trans = coor_trans[:2,:].T
-    warp_back = np.apply_along_axis(to_warp,1,coor_trans)
+    warp_back = np.apply_along_axis(to_warp,1,coor_trans.astype(np.float16))
 
 
     coor = np.array([(x,y,1) for x in range(edges.shape[1]) for y in range(edges.shape[0])]).T
@@ -86,10 +86,10 @@ def estimate_warp(edges,image0,image1):
     coor_trans = np.dot(np.linalg.inv(h_occ),coor)
     coor_trans/=coor_trans[2,:]
     coor_trans = coor_trans[:2,:].T
-    warp_occ = np.apply_along_axis(to_warp,1,coor_trans)
+    warp_occ = np.apply_along_axis(to_warp,1,coor_trans.astype(np.float16))
 
 
-    return warp_back,warp_occ
+    return warp_back,warp_occ, h_back, h_occ
 
 
 
@@ -101,8 +101,17 @@ if __name__ == '__main__':
     images = load_images(path)
     shape = images[0].shape
     edges = get_edges(images)
-
-    warp_back,warp_occ = estimate_warp(edges[0],images[0],images[1])
+    warp_backs = []
+    warp_occs = []
+    h_backs = []
+    h_occs = []
+    for i in range(1,len(images)):
+        print(i)
+        warp_back,warp_occ, h_back,h_occ = estimate_warp(edges[0],images[0],images[i])
+        warp_backs.append(warp_back)
+        warp_occs.append(warp_occ)
+        h_backs.append(h_back)
+        h_occs.append(h_occ)
 
     
 
