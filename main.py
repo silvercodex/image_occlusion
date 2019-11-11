@@ -1,7 +1,7 @@
 import os
 import cv2
 import numpy as np
-
+import torch
 
 
 lk_params = dict( winSize  = (15,15),
@@ -93,6 +93,14 @@ def background_estimate(image, h):
     return cv2.warpPerspective(image,np.linalg.inv(h),(image.shape[1],image.shape[0]))
     
 
+def loss1(warp_backs,warp_occs, target, background, occlusion,A,lambda1,lambda2,lambda3):
+    loss = 0
+    for i in range(len(warp_backs)):
+        l = target-torch.mm(warp_occs[i], occlusion) - torch.mm(warp_occs[i],A)*torch.mm(warp_backs[i],background)
+        loss+=torch.norm(l,1)
+    loss + 
+def loss2():
+    pass
 
 
 
@@ -130,14 +138,16 @@ if __name__ == '__main__':
         occlusion.append(target[i].reshape(-1,3)-A*np.dot(warp_backs[i],background))
     occlusion = np.array(occlusion).mean(axis = 0)
 
-    print(occlusion.shape)
-    print(background.shape)
-    for i in range(len(warp_backs)):
-        print(warp_backs[i].shape)
-        print(warp_occs[i].shape)
-    print(A.shape)
 
+    occlusion = torch.from_numpy(occlusion).astype(torch.float).requires_grad_(True)
+    background = torch.from_numpy(background).astype(torch.float).requires_grad_(True)
+    A = torch.from_numpy(A).astype(torch.float).requires_grad_(True)
 
+    warp_backs = [torch.from_numpy(w).astype(torch.float).requires_grad_(True) for w in warp_backs]
+
+    warp_occs = [torch.from_numpy(w).astype(torch.float).requires_grad_(True) for w in warp_occs]
+
+    target = torch.from_numpy(images[-1].reshape(-1,3)).astype(torch.float)
 
     
     
