@@ -1,7 +1,7 @@
 import os
 import cv2
 import numpy as np
-
+from sklearn.neighbors import KNeighborsRegressor
 
 lk_params = dict( winSize  = (15,15),
                   maxLevel = 2,
@@ -35,7 +35,14 @@ def to_warp(w):
     
     return w_
 
-def estimate_warp(edges,image0,image1):
+def estimate_warp(edges,image0,image1, k = 5):
+    feat_detector = cv2.ORB_create(nfeatures=500)
+    image_1_kp, image_1_desc = feat_detector.detectAndCompute(image0, None)
+    image_2_kp, image_2_desc = feat_detector.detectAndCompute(image1, None)
+    bfm = cv2.BFMatcher(normType=cv2.NORM_HAMMING, crossCheck=True)
+    matches = sorted(bfm.match(image_1_desc, image_2_desc),
+                     key=lambda x: x.distance)[:500]
+
     pts = np.argwhere(edges>0)
     pts[:,[0,1]] = pts[:,[1,0]]
     pts = pts.reshape(-1,1,2).astype(np.float32)
@@ -66,8 +73,54 @@ def estimate_warp(edges,image0,image1):
     h_occ, mask_occ = cv2.findHomography(p0_occ, p1_occ, method=cv2.RANSAC, ransacReprojThreshold=5.0)
 
 
-    if np.linalg.norm(h_back[:2,2])>np.linalg.norm(h_occ[:2,2]):
+    if np.linalg.norm(h_back[:2,2])<np.linalg.norm(h_occ[:2,2]):
         h_back,h_occ = h_occ,h_back
+
+
+    coor = np.array([(x,y) for y in range(edges.shape[0]) for x in range(edges.shape[1])])
+    #import pdb; pdb.set_trace()
+    x = p0_back.reshape(-1,2)[:,0]
+    y = p0_back.reshape(-1,2)[:,1]
+
+    x1 = p1_back.reshape(-1,2)[:,0]
+    y1 = p1_back.reshape(-1,2)[:,1]
+
+    x2 = coor[:,0]
+    y2 = coor[:,1]
+
+    #f_x = interp2d(x, y, x1, kind='linear')
+    #f_y = interp2d(x, y, y1, kind='linear')
+    knn = KNeighborsRegressor(k)
+    knn.fit(p0_back.reshape(-1,2),p1_back.reshape(-1,2)-p0_back.reshape(-1,2))
+    V_back = knn.predict(coor) + coor
+    #X = np.array([f_x(x_i,y_i) for x_i,y_i in zip(x2,y2)])
+    #Y = np.array([f_y(x_i,y_i) for x_i,y_i in zip(x2,y2)])
+    #V_back = np.concatenate([X.reshape(-1,1),Y.reshape(-1,1)],axis = 1)
+
+
+
+    x = p0_occ.reshape(-1,2)[:,0]
+    y = p0_occ.reshape(-1,2)[:,1]
+
+    x1 = p1_occ.reshape(-1,2)[:,0]
+    y1 = p1_occ.reshape(-1,2)[:,1]
+
+    x2 = coor[:,0]
+    y2 = coor[:,1]
+
+    knn = KNeighborsRegressor(k)
+    knn.fit(p0_occ.reshape(-1,2),p1_occ.reshape(-1,2)-p0_occ.reshape(-1,2))
+    V_occ = knn.predict(coor) + coor
+    #f_x = interp2d(x, y, x1, kind='linear')
+    #f_y = interp2d(x, y, y1, kind='linear')
+
+    #X = np.array([f_x(x_i,y_i) for x_i,y_i in zip(x2,y2)])
+    #Y = np.array([f_y(x_i,y_i) for x_i,y_i in zip(x2,y2)])
+    #V_occ = np.concatenate([X.reshape(-1,1),Y.reshape(-1,1)],axis = 1)
+    if np.linalg.norm(h_back[:2,2])>np.linalg.norm(h_occ[:2,2]):
+        return V_occ,V_back, h_back, h_occ
+    else:
+        return V_back,V_occ, h_back, h_occ
 
     coor = np.array([(x,y,1) for y in range(edges.shape[0]) for x in range(edges.shape[1])]).T
 
@@ -78,7 +131,7 @@ def estimate_warp(edges,image0,image1):
     #warp_back = np.apply_along_axis(to_warp,1,coor_trans.astype(np.float16))
 
 
-    coor = np.array([(x,y,1) for x in range(edges.shape[1]) for y in range(edges.shape[0])]).T
+    coor = np.array([(x,y,1) for y in range(edges.shape[0]) for x in range(edges.shape[1])]).T
 
     coor_trans = np.dot(np.linalg.inv(h_occ),coor)
     coor_trans/=coor_trans[2,:]
@@ -230,7 +283,7 @@ def optimize_images(lambda1 = 1, lambda2 = .1, lambda3 = 3000, lambda4 = .5,alph
     grad_A = np.clip(grad_A,-.1,.1)
 
     background -= beta*grad_background
-    occlusion-= beta*grad_occlusion
+    occlusion -= beta*grad_occlusion
     A -= alpha*grad_A
     occlusion = np.clip(occlusion,0,1)
     background = np.clip(background,0,1)
@@ -248,7 +301,7 @@ def optimize_images(lambda1 = 1, lambda2 = .1, lambda3 = 3000, lambda4 = .5,alph
     total_loss += lambda3*(Im_O_G**2 * Im_B_G**2).sum()
     print(total_loss)
     #print(grad_A)
-    return 
+    return total_loss
 
 
 
@@ -285,7 +338,7 @@ def optimize_warps(lambda1 = 1, lambda2 = .1, lambda3 = 3, lambda4 = .5, alpha =
             w = w.reshape(-1)
             xd = w[3]/(w[2]+w[3])
             yd = w[3]/(w[1]+w[3])
-            G_occs[index][dex] +=-np.array([xd - (v_o[0]-x_o),yd - (v_o[1]-y_o)]) + lambda4*np.sign(V_O_grad[dex])
+            G_occs[index][dex] +=np.array([xd - (v_o[0]-x_o),yd - (v_o[1]-y_o)]) + lambda4*np.sign(V_O_grad[dex])
 
         V_O_grad = grad_spacial(V_o-coor)
 
@@ -324,7 +377,7 @@ def optimize_warps(lambda1 = 1, lambda2 = .1, lambda3 = 3, lambda4 = .5, alpha =
             w = w.reshape(-1)
             xd = w[3]/(w[2]+w[3])
             yd = w[3]/(w[1]+w[3])
-            G_backs[index][dex] +=-np.array([xd - (v_o[0]-x_o),yd - (v_o[1]-y_o)]) + lambda4*np.sign(V_B_grad[dex])
+            G_backs[index][dex] +=np.array([xd - (v_o[0]-x_o),yd - (v_o[1]-y_o)]) + lambda4*np.sign(V_B_grad[dex])
 
         
 
@@ -377,24 +430,40 @@ def grad_spacial(im):
     y = cv2.Sobel(temp,cv2.CV_64F,0,1,ksize=3)
     return (x + y).reshape(-1,s)
 
+def downsample_images(images,d):
+    x= int(images[0].shape[1]/(2**d))
+    y= int(images[0].shape[0]/(2**d))
+    return [cv2.resize(image,(x,y)) for image in images]
+
+
 if __name__ == '__main__':
     
-    images = load_images(path)
+    images_original = load_images(path)
+    l = len(images_original)//2
+    images_original = [images_original[l]] + images_original[:l] + images_original[l+1:]  
+    min_size = min(images_original[0].shape[:2])
+    depth = int(np.log2(min_size)) - 5
+    images = downsample_images(images_original, 0)
     shape = images[0].shape
     edges = get_edges(images)
-
+    coor = np.array([(x,y) for y in range(shape[0]) for x in range(shape[1])])
     V_backs = []
     V_occs = []
+    h_backs = []
+    h_occs = []
     background= []
     target = []
     A = []
     for i in range(1,len(images)):
         print(i)
-        V_back,V_occ, h_back,h_occ = estimate_warp(edges[0],images[0],images[i])
+        V_back,V_occ,h_back,h_occ = estimate_warp(edges[0],images[0],images[i], 10)
         V_backs.append(V_back)
         V_occs.append(V_occ)
-        background.append(background_estimate(images[-1], h_back))
-        target.append(background_estimate(images[-1], h_occ))
+        h_backs.append(h_back)
+        h_occs.append(h_occ)
+        background.append(transform_from_motion(images[i].reshape(-1,3), 2*coor-V_back).reshape(shape[0],shape[1],3))
+        target.append(transform_from_motion(images[i].reshape(-1,3), 2*coor-V_occ).reshape(shape[0],shape[1],3))
+
 
 
     background_t = np.array(background).mean(axis = 0)
@@ -415,15 +484,28 @@ if __name__ == '__main__':
 
     occlusion = np.clip(occlusion,0,1)
     background = np.clip(background,0,1)
-
+    cv2.imwrite("background1.png",background.reshape(shape[0],shape[1],3)*255)
+    cv2.imwrite("occlusion1.png",occlusion.reshape(shape[0],shape[1],3)*255)
     #optimize_images(alpha = .001, beta = .000000000001)
 
-    #optimize_warps(alpha = .0001, beta = .0001)
 
+    for i in range(len(V_backs)):
+        cv2.imwrite("occlusion_" + str(i) + ".png",transform_from_motion(occlusion,V_occs[i]).reshape(shape[0],shape[1],3)*255)
+        cv2.imwrite("occlusion_h" + str(i) + ".png",background_estimate(occlusion.reshape(shape[0],shape[1],3), np.linalg.inv(h_occs[i]))*255)
+        cv2.imwrite("background_" + str(i) + ".png",transform_from_motion(background,V_backs[i]).reshape(shape[0],shape[1],3)*255)
+        cv2.imwrite("background_h" + str(i) + ".png",background_estimate(background.reshape(shape[0],shape[1],3), np.linalg.inv(h_backs[i]))*255)
+
+    #optimize_warps(alpha = .0001, beta = .0001)
+    last_loss = 1000000
+    beta =.00001
     for i in range(1000):
         print(i)
-        optimize_images(0,0,0,0,alpha = .01, beta = .001)
-        optimize_warps(0,0,0,0,alpha = .001, beta = .0001)
+        
+        #loss = optimize_images(0,0,0,0,alpha = .01, beta = beta)
+        #if loss > last_loss:
+        #    beta *=.1
+        #last_loss = loss
+        optimize_warps(0,0,0,0,alpha = .01, beta = .01)
 
-        cv2.imwrite("background.png",background.reshape(shape[0],shape[1],3)*255)
-        cv2.imwrite("occlusion.png",occlusion.reshape(shape[0],shape[1],3)*255)
+        cv2.imwrite("background2.png",background.reshape(shape[0],shape[1],3)*255)
+        cv2.imwrite("occlusion2.png",occlusion.reshape(shape[0],shape[1],3)*255)
