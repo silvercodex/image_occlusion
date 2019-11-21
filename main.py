@@ -460,7 +460,7 @@ if __name__ == '__main__':
     images_original = [images_original[l]] + images_original[:l] + images_original[l+1:]  
     min_size = min(images_original[0].shape[:2])
     depth = int(np.log2(min_size)) - 3
-    images = downsample_images(images_original, depth)
+    images = downsample_images(images_original, 0)
     shape = images[0].shape
     edges = get_edges(images)
     coor = np.array([(x,y) for y in range(shape[0]) for x in range(shape[1])])
@@ -485,7 +485,7 @@ if __name__ == '__main__':
     for i,b in enumerate(background):
         cv2.imwrite("background_t_" + str(i) + ".png",b.reshape(shape[0],shape[1],3))
 
-    background_t = np.array(background).mean(axis = 0)
+    background_t = np.median(np.array(background),axis = 0)
     for i in range(len(images)-1):
         A.append(np.abs(background[i]-background_t))
     background = background_t
