@@ -60,13 +60,13 @@ def estimate_warp(edges,image0,image1, k = 5):
 
     d = np.sqrt(d[:,0]**2 + d[:,1]**2)
 
-    points = np.argwhere(d>1*d.std()).reshape(-1)
+    points = np.argwhere(d>.5*d.std()).reshape(-1)
     p0_back = pts[points]
     p1_back = p1[points]
     print(len(points), len(d))
     h_back, mask_back = cv2.findHomography(p0_back, p1_back, method=cv2.RANSAC, ransacReprojThreshold=5.0)
 
-    points = np.argwhere(d<=1*d.std()).reshape(-1)
+    points = np.argwhere(d<=.5*d.std()).reshape(-1)
     p0_occ = pts[points]
     p1_occ = p1[points]
 
@@ -118,7 +118,7 @@ def estimate_warp(edges,image0,image1, k = 5):
     #Y = np.array([f_y(x_i,y_i) for x_i,y_i in zip(x2,y2)])
     #V_occ = np.concatenate([X.reshape(-1,1),Y.reshape(-1,1)],axis = 1)
     if np.linalg.norm(h_back[:2,2])>np.linalg.norm(h_occ[:2,2]):
-        return V_occ,V_back, h_back, h_occ
+        return V_occ,V_back, h_occ, h_back
     else:
         return V_back,V_occ, h_back, h_occ
 
@@ -459,7 +459,7 @@ if __name__ == '__main__':
     l = len(images_original)//2
     images_original = [images_original[l]] + images_original[:l] + images_original[l+1:]  
     min_size = min(images_original[0].shape[:2])
-    depth = int(np.log2(min_size)) - 3
+    depth = int(np.log2(min_size)) - 5
     images = downsample_images(images_original, 0)
     shape = images[0].shape
     edges = get_edges(images)
@@ -474,7 +474,10 @@ if __name__ == '__main__':
     for i in range(1,len(images)):
         print(i)
         V_back,V_occ,h_back,h_occ = estimate_warp(edges[0],images[0],images[i], 10)
+        h_backs.append(h_back)
+        h_occs.append(h_occ)
         background.append(transform_from_motion(images[i].reshape(-1,3), V_back).reshape(shape[0],shape[1],3))
+        #background.append(cv2.warpPerspective(images[i],np.linalg.inv(h_back),(shape[1],shape[0])))
         target.append(transform_from_motion(images[i].reshape(-1,3), V_occ).reshape(shape[0],shape[1],3))
         V_backs.append(2*coor - V_back)
         V_occs.append(2*coor - V_occ)
@@ -486,19 +489,25 @@ if __name__ == '__main__':
         cv2.imwrite("background_t_" + str(i) + ".png",b.reshape(shape[0],shape[1],3))
 
     background_t = np.median(np.array(background),axis = 0)
+
+    cv2.imwrite("background_f.png",background_t.reshape(shape[0],shape[1],3))
+
+    occlusion = np.clip((images[0]-background_t),0,255)
+    cv2.imwrite("occ_f.png",occlusion.reshape(shape[0],shape[1],3))
     for i in range(len(images)-1):
         A.append(np.abs(background[i]-background_t))
     background = background_t
     #del background_t
-    A = np.array(A).mean(axis = 0)
-    A = 1-(A>=.1)
+    A = occlusion.copy()#np.array(A).mean(axis = 0)
+    A = (A>=.1)
     background = background.reshape(-1,3)/255.
     A = A.reshape(-1,3).astype(np.float32)
 
     occlusion = []
     for i in range(len(images)-1):
-        occlusion.append(target[i].reshape(-1,3)-A*transform_from_motion(background,V_backs[i]))
-    occlusion = np.array(occlusion).mean(axis = 0)/255.
+        occlusion.append(target[i].reshape(-1,3)/255.-A*transform_from_motion(background,V_backs[i]))
+    occlusion = np.median(np.array(occlusion),axis = 0)
+    occlusion = occlusion.reshape(-1,3)
     images = [image.reshape(-1,3)/255. for image in images]
 
     occlusion = np.clip(occlusion,0,1)
@@ -510,18 +519,19 @@ if __name__ == '__main__':
 
     for i in range(len(V_backs)):
         cv2.imwrite("occlusion_" + str(i) + ".png",transform_from_motion(occlusion,V_occs[i]).reshape(shape[0],shape[1],3)*255)
-        cv2.imwrite("occlusion_h" + str(i) + ".png",background_estimate(occlusion.reshape(shape[0],shape[1],3), np.linalg.inv(h_occs[i]))*255)
+        cv2.imwrite("occlusion_h" + str(i) + ".png",background_estimate(occlusion.reshape(shape[0],shape[1],3), h_occs[i])*255)
         cv2.imwrite("background_" + str(i) + ".png",transform_from_motion(background,V_backs[i]).reshape(shape[0],shape[1],3)*255)
-        cv2.imwrite("background_h" + str(i) + ".png",background_estimate(background.reshape(shape[0],shape[1],3), np.linalg.inv(h_backs[i]))*255)
+        cv2.imwrite("background_h" + str(i) + ".png",background_estimate(background.reshape(shape[0],shape[1],3), h_backs[i])*255)
 
     #optimize_warps(alpha = .0001, beta = .0001)
     last_loss = 1000000
     last_loss2 = 1000000
-    beta =.1
-    beta2 = .01
+    beta =.01
+    beta2 = .001
     counter1 = 0
     counter2 = 0
     background_t = background_t.reshape(-1,3)/255.
+
     for i in range(1000):
         print(i)
         #if i == 18:
@@ -540,13 +550,13 @@ if __name__ == '__main__':
             A = A_0.copy()
             if counter1 > 3 and beta > .0001:
                 beta *=.1
-            if counter1 > 5:
-                background+=np.random.normal(scale = .001, size = background.shape)
-                background = background.clip(0,1)
-                occlusion+=np.random.normal(scale = .001, size = occlusion.shape)
-                occlusion = occlusion.clip(0,1)
-                A +=np.random.normal(scale = .001, size = A.shape)
-                A = A.clip(0,1)
+            #if counter1 > 5:
+            #    background+=np.random.normal(scale = .001, size = background.shape)
+            #    background = background.clip(0,1)
+            #    occlusion+=np.random.normal(scale = .001, size = occlusion.shape)
+            #    occlusion = occlusion.clip(0,1)
+            #    A +=np.random.normal(scale = .001, size = A.shape)
+            #    A = A.clip(0,1)
         else:
             counter1 = 0
         if loss < last_loss:
@@ -558,12 +568,12 @@ if __name__ == '__main__':
             V_backs = V_backs_0.copy()
             V_occs = V_occs_0.copy()
             counter2 +=1
-            if counter2 > 3 and beta > .0001:
+            if counter2 > 3 and beta2 > .0001:
                 beta2 *=.1
-            if counter2 > 5:
-                V_backs = [V + np.random.normal(scale = .0000001, size = V.shape) for V in V_backs]
-                print(((V_backs[0]- V_backs_0[0])**2).mean())
-                V_occs = [V + np.random.normal(scale = .0000001, size = V.shape) for V in V_backs]
+            #if counter2 > 5:
+            #    V_backs = [V + np.random.normal(scale = .0000001, size = V.shape) for V in V_backs]
+            #    print(((V_backs[0]- V_backs_0[0])**2).mean())
+            #    V_occs = [V + np.random.normal(scale = .0000001, size = V.shape) for V in V_backs]
         else:
             counter2 = 0
         if loss < last_loss2:
