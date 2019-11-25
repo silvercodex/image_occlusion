@@ -7,7 +7,7 @@ lk_params = dict( winSize  = (15,15),
                   maxLevel = 2,
                   criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
 
-path = "images"
+
 def load_images(dir = ""):
     files = os.listdir(dir)
     images = []
@@ -151,7 +151,7 @@ def transform_from_motion(image, v):
     image_new = np.zeros(image.shape)
     
     def process_pixel(i):
-        image_new[i] = im(v[i])#np.dot(get_w(v[i]),im(v[i])).reshape(-1)
+        image_new[i] = np.dot(get_w(v[i]),im(v[i])).reshape(-1)
 
     process_pixel_v = np.vectorize(process_pixel)
     #def w(v_0):
@@ -164,12 +164,12 @@ def transform_from_motion(image, v):
         x = int(np.clip(x,0,shape[1]-1))
         y = int(np.clip(y,0,shape[0]-1))
 
-        #def check(dex):
-        #    if dex < image.shape[0] and dex >=0:
-        #        return image[dex]
-        #    else:
-        #        return np.array([0.0,0.0,0.0])
-        return image[shape[1]*y+x]#np.array([check(shape[1]*y+x),check(shape[1]*y+x+1),check(shape[1]*(y+1)+x),check(shape[1]*(y+1)+x+1)])
+        def check(dex):
+            if dex < image.shape[0] and dex >=0:
+                return image[dex]
+            else:
+                return np.array([0.0,0.0,0.0])
+        return np.array([check(shape[1]*y+x),check(shape[1]*y+x+1),check(shape[1]*(y+1)+x),check(shape[1]*(y+1)+x+1)])
 
     process_pixel_v(list(range(image.shape[0])))
     return image_new
@@ -180,12 +180,12 @@ def get_im(v_0,image):
     x = int(np.clip(x,0,shape[1]-1))
     y = int(np.clip(y,0,shape[0]-1))
 
-    #def check(dex):
-    #    if dex < image.shape[0] and dex >=0:
-    #        return image[dex]
-    #    else:
-    #        return np.array([0.0,0.0,0.0])
-    return image[shape[1]*y+x]#np.array([check(shape[1]*y+x),check(shape[1]*y+x+1),check(shape[1]*(y+1)+x),check(shape[1]*(y+1)+x+1)])
+    def check(dex):
+        if dex < image.shape[0] and dex >=0:
+            return image[dex]
+        else:
+            return np.array([0.0,0.0,0.0])
+    return np.array([check(shape[1]*y+x),check(shape[1]*y+x+1),check(shape[1]*(y+1)+x),check(shape[1]*(y+1)+x+1)])
 
 def get_w(v_0):
     x = int(v_0[0])
@@ -216,8 +216,8 @@ def optimize_images(lambda1 = 1, lambda2 = .1, lambda3 = 3000, lambda4 = .5,alph
             else:
                 return False
 
-        def process_pixel(dex,v_o,v_b):
-            grad_A[dex] += -get_im(v_b,background).reshape(-1)*np.sign(l[dex]) + 2*lambda1*Im_A_G[dex]#-get_w(v_o)[0][j]*np.dot(get_w(v_b),get_im(v_b,background)).reshape(-1)*np.sign(l[dex]) + 2*lambda1*Im_A_G[dex]#-get_w(v_o)[0][j]*get_im(v_b,background).reshape(-1)*np.sign(l[dex]) + 2*lambda1*Im_A_G[dex]#-get_w(v_o)[0][j]*np.dot(get_w(v_b),get_im(v_b,background)).reshape(-1)*np.sign(l[dex]) + 2*lambda1*Im_A_G[dex]
+        def process_pixel(dex,j,v_o,v_b):
+            grad_A[dex] += -get_w(v_o)[0][j]*np.dot(get_w(v_b),get_im(v_b,background)).reshape(-1)*np.sign(l[dex]) + 2*lambda1*Im_A_G[dex]#-get_w(v_o)[0][j]*get_im(v_b,background).reshape(-1)*np.sign(l[dex]) + 2*lambda1*Im_A_G[dex]#-get_w(v_o)[0][j]*np.dot(get_w(v_b),get_im(v_b,background)).reshape(-1)*np.sign(l[dex]) + 2*lambda1*Im_A_G[dex]
 
         #for i in range(len(V_b)):
         def process_warp(i):
@@ -225,11 +225,11 @@ def optimize_images(lambda1 = 1, lambda2 = .1, lambda3 = 3000, lambda4 = .5,alph
             y_o = int(V_o[i][1])
             x_o = int(np.clip(x_o,0,shape[1]-1))
             y_o = int(np.clip(y_o,0,shape[0]-1))
-            dex = shape[1]*y_o+x_o
-            #dexes = get_dex(x_o,y_o)
-            #for j,dex in enumerate(dexes):
-             #   if check(dex,background):
-            process_pixel(dex,V_o[i],V_b[i])
+            #dex = shape[1]*y_o+x_o
+            dexes = get_dex(x_o,y_o)
+            for j,dex in enumerate(dexes):
+                if check(dex,background):
+                    process_pixel(dex,j,V_o[i],V_b[i])
         
         
         process_warp_v = np.vectorize(process_warp)
@@ -242,8 +242,8 @@ def optimize_images(lambda1 = 1, lambda2 = .1, lambda3 = 3000, lambda4 = .5,alph
                 return True
             else:
                 return False
-        def process_pixel(dex,v_o,v_b):
-            grad_occlusion[dex] += -np.sign(l[dex]) + lambda2*np.sign(Im_O_G[dex]) + 2*lambda3*Im_O_G[dex]*(Im_B_G[dex]**2)#-get_w(v_o)[0][j]*np.sign(l[dex]) + lambda2*np.sign(Im_O_G[dex]) + 2*lambda3*Im_O_G[dex]*(Im_B_G[dex]**2)
+        def process_pixel(dex,j,v_o,v_b):
+            grad_occlusion[dex] += -get_w(v_o)[0][j]*np.sign(l[dex]) + lambda2*np.sign(Im_O_G[dex]) + 2*lambda3*Im_O_G[dex]*(Im_B_G[dex]**2)
         
         
         def process_warp(i):
@@ -251,11 +251,11 @@ def optimize_images(lambda1 = 1, lambda2 = .1, lambda3 = 3000, lambda4 = .5,alph
             y_o = int(V_o[i][1])
             x_o = int(np.clip(x_o,0,shape[1]-1))
             y_o = int(np.clip(y_o,0,shape[0]-1))
-            dex = shape[1]*y_o+x_o
-            #dexes = get_dex(x_o,y_o)
-            #for j,dex in enumerate(dexes):
-             #   if check(dex,background):
-            process_pixel(dex,V_o[i],V_b[i])
+            #dex = shape[1]*y_o+x_o
+            dexes = get_dex(x_o,y_o)
+            for j,dex in enumerate(dexes):
+                if check(dex,background):
+                    process_pixel(dex,j,V_o[i],V_b[i])
         process_warp_v = np.vectorize(process_warp)
 
         process_warp_v(list(range(len(V_b))))
@@ -266,19 +266,19 @@ def optimize_images(lambda1 = 1, lambda2 = .1, lambda3 = 3000, lambda4 = .5,alph
                 return True
             else:
                 return False
-        def process_pixel(dex,v_o,v_b):
-            grad_background[dex] += -get_im(v_o,A).reshape(-1)*np.sign(l[dex]) + lambda2*np.sign(Im_B_G[dex]) + 2*lambda3*Im_B_G[dex]*(Im_O_G[dex]**2)#-get_w(v_b)[0][j]*np.dot(get_w(v_o),get_im(v_o,A)).reshape(-1)*np.sign(l[dex]) + lambda2*np.sign(Im_B_G[dex]) + 2*lambda3*Im_B_G[dex]*(Im_O_G[dex]**2)
+        def process_pixel(dex,j,v_o,v_b):
+            grad_background[dex] += -get_w(v_b)[0][j]*np.dot(get_w(v_o),get_im(v_o,A)).reshape(-1)*np.sign(l[dex]) + lambda2*np.sign(Im_B_G[dex]) + 2*lambda3*Im_B_G[dex]*(Im_O_G[dex]**2)
         
         def process_warp(i):
             x_o = int(V_o[i][0])
             y_o = int(V_o[i][1])
             x_o = int(np.clip(x_o,0,shape[1]-1))
             y_o = int(np.clip(y_o,0,shape[0]-1))
-            dex = shape[1]*y_o+x_o
-            #dexes = get_dex(x_o,y_o)
-            #for j,dex in enumerate(dexes):
-             #   if check(dex,background):
-            process_pixel(dex,V_o[i],V_b[i])
+            #dex = shape[1]*y_o+x_o
+            dexes = get_dex(x_o,y_o)
+            for j,dex in enumerate(dexes):
+                if check(dex,background):
+                    process_pixel(dex,j,V_o[i],V_b[i])
         process_warp_v = np.vectorize(process_warp)
 
         process_warp_v(list(range(len(V_b))))
@@ -343,22 +343,23 @@ def optimize_warps(lambda1 = 1, lambda2 = .1, lambda3 = 3000, lambda4 = .5, alph
                 return False
 
         def process_pixel(dex,v_o,v_b):
-            #w_grad = np.zeros(4)
-            #x_o = int(v_o[0])
-            #y_o = int(v_o[1])
-  
-            #dexes = get_dex(x_o,y_o)
-            #for i,d in enumerate(dexes):
-            #    if check(d,occlusion):
-            #        w_grad[i] += (-(occlusion[dexes[i]] + A[dexes[i]]*np.dot(get_w(v_b),get_im(v_b,background)))*np.sign(l[dex])).mean()
-            #w = get_w(v_b)-alpha*w_grad
-            #w = w.reshape(-1)
-            #xd = w[3]/(w[2]+w[3])
-            #yd = w[3]/(w[1]+w[3])
-            G_occs[index][dex] += (V_O_grad[dex]*l[dex].mean()  + (A_grad[dex]*background[dex]*np.sign(l[dex])).mean())   #np.array([xd - (v_o[0]-x_o),yd - (v_o[1]-y_o)]) + lambda4*np.sign(V_O_grad[dex])
+            w_grad = np.zeros(4)
+            x_o = int(v_o[0])
+            y_o = int(v_o[1])
+            x_o = int(np.clip(x_o,0,shape[1]-1))
+            y_o = int(np.clip(y_o,0,shape[0]-1))
+            dexes = get_dex(x_o,y_o)
+            for i,d in enumerate(dexes):
+                if check(d,occlusion):
+                    w_grad[i] += (-(occlusion[dexes[i]] + A[dexes[i]]*np.dot(get_w(v_b),get_im(v_b,background)))*np.sign(l[dex])).mean()
+            w = get_w(v_b)-alpha*w_grad
+            w = w.reshape(-1)
+            xd = w[3]/(w[2]+w[3])
+            yd = w[3]/(w[1]+w[3])
+            G_occs[index][dex] += np.array([xd - (v_o[0]-x_o),yd - (v_o[1]-y_o)]) + lambda4*np.sign(V_O_grad[dex])
 
         V_O_grad = grad_spacial(V_o-coor)
-        A_grad = grad_spacial(A)
+        #A_grad = grad_spacial(A)
 
 
         #for i in range(len(V_b)):
@@ -383,18 +384,18 @@ def optimize_warps(lambda1 = 1, lambda2 = .1, lambda3 = 3000, lambda4 = .5, alph
                 return False
 
         def process_pixel(dex,v_o,v_b):
-            #w_grad = np.zeros(4)
-            #x_o = int(v_o[0])
-            #y_o = int(v_o[1])
-            #dexes = get_dex(x_o,y_o)
-            #for i,d in enumerate(dexes):
-            #    if check(d,occlusion):
-            #        w_grad[i] += (-background[dexes[i]]*np.dot(get_w(v_o),get_im(v_o,A))*np.sign(l[dex])).mean()
-            #w = get_w(v_b)-alpha*np.clip(w_grad,-.1,.1)
-            #w = w.reshape(-1)
-            #xd = w[3]/(w[2]+w[3])
-            #yd = w[3]/(w[1]+w[3])
-            G_backs[index][dex] += V_B_grad[dex]*(A[dex]*l[dex]).mean()#np.array([xd - (v_o[0]-x_o),yd - (v_o[1]-y_o)]) + lambda4*np.sign(V_B_grad[dex])
+            w_grad = np.zeros(4)
+            x_o = int(v_o[0])
+            y_o = int(v_o[1])
+            dexes = get_dex(x_o,y_o)
+            for i,d in enumerate(dexes):
+                if check(d,occlusion):
+                    w_grad[i] += (-background[dexes[i]]*np.dot(get_w(v_o),get_im(v_o,A))*np.sign(l[dex])).mean()
+            w = get_w(v_b)-alpha*np.clip(w_grad,-.1,.1)
+            w = w.reshape(-1)
+            xd = w[3]/(w[2]+w[3])
+            yd = w[3]/(w[1]+w[3])
+            G_backs[index][dex] += np.array([xd - (v_o[0]-x_o),yd - (v_o[1]-y_o)]) + lambda4*np.sign(V_B_grad[dex])
 
         
 
@@ -419,8 +420,8 @@ def optimize_warps(lambda1 = 1, lambda2 = .1, lambda3 = 3000, lambda4 = .5, alph
         l = loss[i]
         calc_gradOcc(V_backs[i],V_occs[i],i)
         calc_gradBack(V_backs[i],V_occs[i],i)
-    G_backs = [np.clip(g,-.1,.1) for g in G_backs]
-    G_occs = [np.clip(g,-.1,.1) for g in G_occs]
+    #G_backs = [np.clip(g,-.1,.1) for g in G_backs]
+    #G_occs = [np.clip(g,-.1,.1) for g in G_occs]
     for i in range(len(V_backs)):
         V_backs[i]-=beta*G_backs[i]
         V_occs[i]-=beta*G_occs[i]
@@ -453,14 +454,17 @@ def downsample_images(images,d):
     return [cv2.resize(image,(x,y)) for image in images]
 
 
+
+
 if __name__ == '__main__':
-    
+    path = "images"
+    output = "image_output/"
     images_original = load_images(path)
     l = len(images_original)//2
     images_original = [images_original[l]] + images_original[:l] + images_original[l+1:]  
     min_size = min(images_original[0].shape[:2])
-    depth = int(np.log2(min_size)) - 5
-    images = downsample_images(images_original, 0)
+    depth = int(np.log2(min_size)) - 7
+    images = downsample_images(images_original, depth)
     shape = images[0].shape
     edges = get_edges(images)
     coor = np.array([(x,y) for y in range(shape[0]) for x in range(shape[1])])
@@ -485,15 +489,15 @@ if __name__ == '__main__':
         h_occs.append(h_occ)
 
 
-    for i,b in enumerate(background):
-        cv2.imwrite("background_t_" + str(i) + ".png",b.reshape(shape[0],shape[1],3))
+    #for i,b in enumerate(background):
+    #    cv2.imwrite(output + "background_t_" + str(i) + ".png",b.reshape(shape[0],shape[1],3))
 
-    background_t = np.median(np.array(background),axis = 0)
+    background_t = np.clip(np.median(np.array(background),axis = 0), 0 ,255)
 
-    cv2.imwrite("background_f.png",background_t.reshape(shape[0],shape[1],3))
+    #cv2.imwrite("background_f.png",background_t.reshape(shape[0],shape[1],3))
 
-    occlusion = np.clip((images[0]-background_t),0,255)
-    cv2.imwrite("occ_f.png",occlusion.reshape(shape[0],shape[1],3))
+    occlusion = np.clip((images[0].astype(np.float32)-background_t),0,255)
+    #cv2.imwrite("occ_f.png",occlusion.reshape(shape[0],shape[1],3))
     for i in range(len(images)-1):
         A.append(np.abs(background[i]-background_t))
     background = background_t
@@ -512,22 +516,23 @@ if __name__ == '__main__':
 
     occlusion = np.clip(occlusion,0,1)
     background = np.clip(background,0,1)
-    cv2.imwrite("background1.png",background.reshape(shape[0],shape[1],3)*255)
-    cv2.imwrite("occlusion1.png",occlusion.reshape(shape[0],shape[1],3)*255)
+    cv2.imwrite(output + "background1.png",background.reshape(shape[0],shape[1],3)*255)
+    cv2.imwrite(output + "occlusion1.png",occlusion.reshape(shape[0],shape[1],3)*255)
+    cv2.imwrite(output + "A1.png",A.reshape(shape[0],shape[1],3)*255)
     #optimize_images(alpha = .001, beta = .000000000001)
 
-
+    '''
     for i in range(len(V_backs)):
         cv2.imwrite("occlusion_" + str(i) + ".png",transform_from_motion(occlusion,V_occs[i]).reshape(shape[0],shape[1],3)*255)
-        cv2.imwrite("occlusion_h" + str(i) + ".png",background_estimate(occlusion.reshape(shape[0],shape[1],3), h_occs[i])*255)
+        #cv2.imwrite("occlusion_h" + str(i) + ".png",background_estimate(occlusion.reshape(shape[0],shape[1],3), h_occs[i])*255)
         cv2.imwrite("background_" + str(i) + ".png",transform_from_motion(background,V_backs[i]).reshape(shape[0],shape[1],3)*255)
-        cv2.imwrite("background_h" + str(i) + ".png",background_estimate(background.reshape(shape[0],shape[1],3), h_backs[i])*255)
+        #cv2.imwrite("background_h" + str(i) + ".png",background_estimate(background.reshape(shape[0],shape[1],3), h_backs[i])*255)
 
     #optimize_warps(alpha = .0001, beta = .0001)
     last_loss = 1000000
     last_loss2 = 1000000
     beta =.01
-    beta2 = .001
+    beta2 = .01
     counter1 = 0
     counter2 = 0
     background_t = background_t.reshape(-1,3)/255.
@@ -541,7 +546,7 @@ if __name__ == '__main__':
         A_0 = A.copy()
         V_backs_0 = [V.copy() for V in V_backs]
         V_occs_0 = [V.copy() for V in V_occs]
-        last_loss,loss = optimize_images(0,0,0,0,alpha = .01, beta = beta)
+        last_loss,loss = optimize_images(alpha = .01, beta = beta)
         
         if loss >= last_loss:
             counter1 +=1
@@ -562,7 +567,7 @@ if __name__ == '__main__':
         if loss < last_loss:
             last_loss = loss
 
-        last_loss2, loss = optimize_warps(0,0,0,0,alpha = .01, beta = beta2)
+        last_loss2, loss = optimize_warps(alpha = .01, beta = -beta2)
         #print(last_loss2,loss)
         if loss >= last_loss2:
             V_backs = V_backs_0.copy()
@@ -582,3 +587,5 @@ if __name__ == '__main__':
         print(np.abs(background- background_t/255.).mean())
         cv2.imwrite("background2.png",background.reshape(shape[0],shape[1],3)*255)
         cv2.imwrite("occlusion2.png",occlusion.reshape(shape[0],shape[1],3)*255)
+        cv2.imwrite("A2.png",A.reshape(shape[0],shape[1],3)*255)
+        '''
